@@ -1,0 +1,4 @@
+# Project exclude paths
+/lambda-get-games/target/
+/lambda-sqs-rds/target/
+/lambda-sqs-sender/target/
