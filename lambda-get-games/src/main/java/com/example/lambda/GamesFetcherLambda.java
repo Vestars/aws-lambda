@@ -2,6 +2,7 @@ package com.example.lambda;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
+import com.example.model.Game;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
@@ -13,48 +14,51 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class GamesFetcherLambda implements RequestHandler<Void, List<Map<String, String>>> {
+public class GamesFetcherLambda implements RequestHandler<Void, List<Game>> {
+
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
-    public List<Map<String, String>> handleRequest(Void input, Context context) {
-        List<Map<String, String>> games = new ArrayList<>();
-        context.getLogger().log("Start");
+    public List<Game> handleRequest(Void input, Context context) {
+        List<Game> games = new ArrayList<>();
         try {
-            context.getLogger().log("Pre Secret Manager");
-            SecretsManagerClient client = SecretsManagerClient.builder().region(Region.EU_NORTH_1).build();
-            context.getLogger().log("Secret Manager");
-            GetSecretValueRequest getSecretValueRequest = GetSecretValueRequest.builder()
-                    .secretId("rds-db-credentials/steamdb/postgres/1747922949063")
-                    .build();
-            GetSecretValueResponse getSecretValueResponse = client.getSecretValue(getSecretValueRequest);
-            context.getLogger().log("Response: " + getSecretValueResponse.secretString());
-            ObjectMapper objectMapper = new ObjectMapper();
-            Map<String, String> secretMap = objectMapper.readValue(getSecretValueResponse.secretString(), Map.class);
-
-            String url = String.format("jdbc:postgresql://%s:%s/%s",
-                    secretMap.get("host"), secretMap.get("port"), secretMap.get("dbname"));
-            context.getLogger().log("PreConnection");
-            try (Connection conn = DriverManager.getConnection(url, secretMap.get("username"), secretMap.get("password"));
-                 PreparedStatement stmt = conn.prepareStatement("SELECT * FROM games");
-                 ResultSet rs = stmt.executeQuery()) {
-                context.getLogger().log("Connection");
-                while (rs.next()) {
-                    Map<String, String> game = new HashMap<>();
-                    game.put("id", rs.getString("id"));
-                    game.put("name", rs.getString("name"));
-                    game.put("imageUrl", rs.getString("image_url"));
-                    games.add(game);
-                }
-            }
-
+            Map<String, String> secretMap = retrieveDatabaseCredentials();
+            String url = databaseUrl(secretMap);
+            Connection connection = DriverManager.getConnection(url, secretMap.get("username"), secretMap.get("password"));
+            getDataFromDatabase(connection, games);
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());
         }
         context.getLogger().log("Size: " + games.size());
         return games;
+    }
+
+    private void getDataFromDatabase(Connection connection, List<Game> games) throws Exception {
+        PreparedStatement stmt = connection.prepareStatement("SELECT * FROM games");
+        ResultSet resultSet = stmt.executeQuery();
+        while (resultSet.next()) {
+            Game game = new Game();
+            game.setId(resultSet.getInt("id"));
+            game.setName(resultSet.getString("name"));
+            game.setImageUrl(resultSet.getString("image_url"));
+            games.add(game);
+        }
+    }
+
+    private Map<String, String> retrieveDatabaseCredentials() throws Exception {
+        SecretsManagerClient client = SecretsManagerClient.builder().region(Region.EU_NORTH_1).build();
+        GetSecretValueRequest getSecretValueRequest = GetSecretValueRequest.builder()
+                .secretId("rds-db-credentials/steamdb/postgres/1747922949063")
+                .build();
+        GetSecretValueResponse getSecretValueResponse = client.getSecretValue(getSecretValueRequest);
+        return objectMapper.readValue(getSecretValueResponse.secretString(), Map.class);
+    }
+
+    private String databaseUrl(Map<String, String> connectionData) {
+        return String.format("jdbc:postgresql://%s:%s/%s",
+                connectionData.get("host"), connectionData.get("port"), connectionData.get("dbname"));
     }
 }

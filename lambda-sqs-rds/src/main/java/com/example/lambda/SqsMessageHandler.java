@@ -25,11 +25,9 @@ public class SqsMessageHandler implements RequestHandler<SQSEvent, Void> {
         }
 
         try {
-            Map<String, String> secretMap = retrieveDatabaseCredentials(context);
+            Map<String, String> secretMap = retrieveDatabaseCredentials();
             String url = databaseUrl(secretMap);
-            context.getLogger().log("Pre connection");
             Connection connection = DriverManager.getConnection(url, secretMap.get("username"), secretMap.get("password"));
-            context.getLogger().log("After connection");
             for (SQSEvent.SQSMessage message : event.getRecords()) {
                 String body = message.getBody();
                 Game game = objectMapper.readValue(body, Game.class);
@@ -51,15 +49,12 @@ public class SqsMessageHandler implements RequestHandler<SQSEvent, Void> {
         stmt.executeUpdate();
     }
 
-    private Map<String, String> retrieveDatabaseCredentials(Context context) throws Exception {
-        context.getLogger().log("Pre Secret Manager");
+    private Map<String, String> retrieveDatabaseCredentials() throws Exception {
         SecretsManagerClient client = SecretsManagerClient.builder().region(Region.EU_NORTH_1).build();
-        context.getLogger().log("Secret Manager");
         GetSecretValueRequest getSecretValueRequest = GetSecretValueRequest.builder()
                 .secretId("rds-db-credentials/steamdb/postgres/1747922949063")
                 .build();
         GetSecretValueResponse getSecretValueResponse = client.getSecretValue(getSecretValueRequest);
-        context.getLogger().log("Response: " + getSecretValueResponse.secretString());
         return objectMapper.readValue(getSecretValueResponse.secretString(), Map.class);
     }
 
