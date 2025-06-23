@@ -27,14 +27,17 @@ public class SqsMessageHandler implements RequestHandler<SQSEvent, Void> {
         try {
             Map<String, String> secretMap = retrieveDatabaseCredentials();
             String url = databaseUrl(secretMap);
-            Connection connection = DriverManager.getConnection(url, secretMap.get("username"), secretMap.get("password"));
-            for (SQSEvent.SQSMessage message : event.getRecords()) {
-                String body = message.getBody();
-                Game game = objectMapper.readValue(body, Game.class);
+            try (Connection connection = DriverManager.getConnection(url, secretMap.get("username"), secretMap.get("password"))) {
+                for (SQSEvent.SQSMessage message : event.getRecords()) {
+                    String body = message.getBody();
+                    Game game = objectMapper.readValue(body, Game.class);
 
-                context.getLogger().log("Inserting to DB: " + game);
-                insertIntoDatabase(connection, game.name(), game.imageUrl());
+                    context.getLogger().log("Inserting to DB: " + game);
+                    insertIntoDatabase(connection, game.name(), game.imageUrl());
+                }
             }
+
+
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());
         }
@@ -47,6 +50,7 @@ public class SqsMessageHandler implements RequestHandler<SQSEvent, Void> {
         stmt.setString(1, name);
         stmt.setString(2, imageUrl);
         stmt.executeUpdate();
+        stmt.close();
     }
 
     private Map<String, String> retrieveDatabaseCredentials() throws Exception {

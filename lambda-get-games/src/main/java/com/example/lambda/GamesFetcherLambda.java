@@ -27,8 +27,10 @@ public class GamesFetcherLambda implements RequestHandler<Void, List<Game>> {
         try {
             Map<String, String> secretMap = retrieveDatabaseCredentials();
             String url = databaseUrl(secretMap);
-            Connection connection = DriverManager.getConnection(url, secretMap.get("username"), secretMap.get("password"));
-            getDataFromDatabase(connection, games);
+            try (Connection connection = DriverManager.getConnection(url, secretMap.get("username"), secretMap.get("password"));
+                 PreparedStatement stmt = connection.prepareStatement("SELECT * FROM games")) {
+                getDataFromDatabase(stmt, games);
+            }
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());
         }
@@ -36,8 +38,7 @@ public class GamesFetcherLambda implements RequestHandler<Void, List<Game>> {
         return games;
     }
 
-    private void getDataFromDatabase(Connection connection, List<Game> games) throws Exception {
-        PreparedStatement stmt = connection.prepareStatement("SELECT * FROM games");
+    private void getDataFromDatabase(PreparedStatement stmt, List<Game> games) throws Exception {
         ResultSet resultSet = stmt.executeQuery();
         while (resultSet.next()) {
             Game game = new Game();
